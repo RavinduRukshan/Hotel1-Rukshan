@@ -1,0 +1,389 @@
+Project title: Luxury Hotel Web App — React frontend, Express backend, MongoDB, Stripe payments, admin panel
+UI inspiration: follow the visual concept from this Dribbble shot — https://dribbble.com/shots/25897549-Wanderlush-Travel-Landing-Page. Big hero, clean glass cards, elegant typography, generous white space, subtle parallax & microinteractions. Use Pixabay for production-safe imagery and Pinterest for moodboard inspiration.
+
+High-level requirements (what to build)
+
+Full responsive public website (React) for a hotel (not villa) — homepage, rooms listing, room detail, gallery, check-availability/reservation flow, contact.
+
+Users can check availability, select rooms/dates/guests, pay online using Stripe, and receive reservation confirmation.
+
+Admin panel (secure login) to view / manage reservations, mark statuses (pending, confirmed, checked-in, completed, cancelled), and export CSV.
+
+Backend API (Express) with REST endpoints and secure admin auth (JWT).
+
+MongoDB (Atlas) for persisting rooms, availability, reservations, users (admins), and payments.
+
+Stripe integration using Payment Intents or Checkout Sessions + webhook to confirm payments and finalize bookings on the backend.
+
+Basic analytics events (availability checks, completed bookings) logged server-side.
+
+Seed script to pre-populate rooms, sample availability, and an admin user.
+
+Production-ready environment configuration and clear README explaining env vars, running locally, and deployment on Replit (or any similar host).
+
+Stack & versions
+
+Frontend: React (Create React App or Vite) with React Router, Axios, Tailwind CSS (optional). Use react-query or local state for fetches (optional).
+
+Backend: Node.js + Express + Mongoose (MongoDB).
+
+Database: MongoDB Atlas (connection string via env).
+
+Payments: Stripe (Node SDK). Use Checkout Sessions or Payment Intents + webhooks.
+
+Auth: JWT for admin; password hashing with bcrypt.
+
+Deployment target: Replit (instructions included). All code in JavaScript.
+
+UX / UI details (follow Wanderlush look)
+
+Desktop hero: large full-bleed photo (left text card), glass package card on the right showing quick rates & CTA.
+
+Minimal, modern, airy layout with soft rounded cards, subtle shadows, elegant serif headline + readable sans for body.
+
+Use glassmorphism for rate/feature cards and a muted neutral color palette with one accent color.
+
+Animations: parallax / slow hero scroll, fade-in on section entry, hover scale on cards. Keep motion subtle for accessibility.
+
+Mobile-first responsive behavior: stacked layout, sticky bottom CTA “Check availability” on mobile.
+
+Pages & components required
+
+Public:
+
+/ Home (hero, featured rooms, packages, short map, testimonials, CTA)
+
+/rooms Rooms listing (cards)
+
+/rooms/:slug Room detail (photos, amenities, calendar, price, check availability)
+
+/gallery Full gallery + lightbox
+
+/check-availability Date range + guests → returns available rooms and price breakdown
+
+/reserve Reservation checkout (collect guest details, proceed to Stripe)
+
+/confirmation Booking confirmation page (after successful payment)
+
+/contact Contact form & hotel details
+
+Admin:
+
+/admin/login Admin login (email + password)
+
+/admin/dashboard Reservations list (search / filter / status change)
+
+/admin/reservations/:id Reservation detail view (mark status, refund options, notes)
+
+/admin/rooms Manage rooms (CRUD) — minimal UI for now
+
+/admin/reports Export CSV of reservations
+
+Data models (Mongoose schemas) — precise fields
+
+Room
+
+{
+  _id: ObjectId,
+  title: String,              // "Deluxe Double"
+  slug: String,               // "deluxe-double"
+  description: String,
+  capacity: Number,           // max people
+  beds: Number,
+  amenities: [String],
+  images: [String],           // public asset URLs
+  basePrice: Number,          // per night base price in smallest currency unit (e.g., cents or LKR)
+  boardOptions: {             // optional: FB / HB / BB price modifiers
+    FB: Number,
+    HB: Number,
+    BB: Number
+  },
+  createdAt: Date,
+  updatedAt: Date
+}
+
+
+Reservation
+
+{
+  _id: ObjectId,
+  reservationId: String,      // unique human-friendly id
+  room: ObjectId (ref Room),
+  guest: {
+    fullName: String,
+    email: String,
+    phone: String,
+    nationality: String
+  },
+  checkIn: Date,
+  checkOut: Date,
+  nights: Number,
+  guestsCount: Number,
+  boardOption: String,        // 'FB'|'HB'|'BB' or null
+  totalAmount: Number,        // integer cents/LKR
+  currency: String,
+  paymentStatus: String,      // 'pending','paid','refunded'
+  stripePaymentIntentId: String,
+  meta: Object,               // store extra metadata
+  status: String,             // 'pending','confirmed','checked_in','completed','cancelled'
+  createdAt: Date,
+  updatedAt: Date
+}
+
+
+AdminUser
+
+{
+  _id: ObjectId,
+  email: String,
+  passwordHash: String,
+  name: String,
+  role: String, // 'admin'
+  createdAt: Date
+}
+
+
+Availability (optional lightweight approach)
+
+For MVP, implement availability check by scanning existing reservations for a room and verifying date overlap. (No separate availability collection necessary.)
+
+Optionally provide a blockedDates array on Room for manual blocks (maintenance).
+
+API endpoints (Express) — spec & behavior
+
+Public endpoints
+
+GET /api/rooms — returns all rooms (with filters: capacity, price, boardOption, slug).
+
+GET /api/rooms/:slug — returns room detail.
+
+POST /api/availability/check
+
+Body: { checkIn: ISODate, checkOut: ISODate, guests: Number, roomSlug?: String }
+
+Returns: { available: Boolean, rooms: [ {room, priceBreakdown} ], suggestion?: [alternativeRanges] }
+
+Implementation: look up rooms (or the specific room) and check for conflicting reservations; calculate total price (nights * basePrice +/- board option).
+
+POST /api/reservations/create-intent — create reservation draft and Stripe Checkout Session or PaymentIntent on the server.
+
+Body: { roomId, checkIn, checkOut, guestsCount, guestInfo, boardOption }
+
+Returns: { sessionId, clientSecret, reservationDraftId } (if using Checkout or Payment Intent).
+
+Create a reservation record with paymentStatus: 'pending' and store stripe ids.
+
+POST /api/webhooks/stripe — Stripe webhook endpoint to receive checkout.session.completed or payment_intent.succeeded. On successful payment, mark reservation paymentStatus: 'paid' and status: 'confirmed'. (Secure webhook with Stripe signing secret.)
+
+GET /api/reservations/:id — public access limited to reservation id/email (optional) to show confirmation.
+
+Admin endpoints (require JWT & protected)
+
+POST /api/admin/login — returns JWT token.
+
+GET /api/admin/reservations — list reservations, with query filters (status, dates, search).
+
+GET /api/admin/reservations/:id — reservation detail.
+
+PATCH /api/admin/reservations/:id — update status (confirm, check-in, cancel).
+
+POST /api/admin/rooms — create room.
+
+PATCH /api/admin/rooms/:id — update room.
+
+DELETE /api/admin/rooms/:id — remove room (soft-delete recommended).
+
+GET /api/admin/reports — generate CSV export of reservations (date range filter).
+
+Middleware & extras
+
+CORS configured to allow client origin.
+
+Input validation (Joi or express-validator).
+
+Rate limit for public endpoints.
+
+Logging (morgan) and error handling.
+
+Stripe Integration details
+
+Use Stripe Checkout Sessions for easiest flow or Payment Intents for more custom flows. The prompt below asks generator to implement Checkout Sessions + webhook.
+
+Flow:
+
+Frontend calls /api/reservations/create-intent with reservation data.
+
+Backend creates a reservation draft in DB (status: pending) and creates a Stripe Checkout Session with line_items equal to the total amount, metadata containing reservationDraftId. Set success_url to /confirmation?session_id={CHECKOUT_SESSION_ID} and cancel_url to /reserve?canceled=true.
+
+Frontend redirects to session.url (returned from server) or uses Stripe client to redirect.
+
+Stripe triggers checkout.session.completed webhook. Backend uses the metadata.reservationDraftId to mark reservation as paid/confirmed.
+
+Send confirmation email (optional — good to stub with SendGrid later).
+
+Protect webhook endpoint using Stripe signing secret.
+
+Keep Stripe API keys in env vars: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET.
+
+Frontend behavior (React)
+
+Routing using React Router.
+
+Pages:
+
+Home: hero (inspired by Wanderlush), featured rooms, quick availability widget.
+
+Rooms: cards with brief info and CTA.
+
+Room Detail: gallery carousel, amenities, availability calendar, price calculator, Reserve button.
+
+Reserve: collects guest details, confirms price breakdown, calls server for Stripe Checkout and redirects to Stripe.
+
+Confirmation: reads session_id from query, calls server to fetch reservation details.
+
+Admin side: full-page protected area (may be in same app under /admin, guard with JWT).
+
+Forms validation, friendly error messages.
+
+Use next/image only for Next.js; since here it’s a React app, use optimized <img> with srcset or libraries as needed. (If generator prefers Next.js, you can adapt; but user requested React specifically.)
+
+Show loading states and friendly UI for network errors.
+
+Admin auth & security
+
+Admin login endpoint uses bcrypt hashed password stored in DB.
+
+On successful login, return a JWT (signed with JWT_SECRET) with 1d expiration.
+
+Admin routes require Authorization: Bearer <token>.
+
+Frontend stores token in memory or secure cookie (for simplicity localStorage is acceptable but document trade-offs).
+
+Secure sensitive endpoints and ensure CORS only allows approved origins in production.
+
+Seed data & scripts
+
+Provide a scripts/seed.js script that:
+
+Creates sample rooms (Deluxe Double, Triple, Family, etc.) with images pointing to public assets or Pixabay links.
+
+Creates 1 admin user: email: admin@example.com, password: Admin123! (document that password should be changed).
+
+Creates a few example reservations that demonstrate blocked dates.
+
+Include npm run seed in README.
+
+Folder structure (monorepo)
+/hotel-app
+├─ /client
+│  ├─ package.json
+│  ├─ src/
+│  │  ├─ components/
+│  │  ├─ pages/
+│  │  ├─ hooks/
+│  │  ├─ services/ (api calls)
+│  │  └─ styles/
+│  └─ public/assets/images/ (pixabay images)
+├─ /server
+│  ├─ package.json
+│  ├─ src/
+│  │  ├─ models/ (mongoose schemas)
+│  │  ├─ routes/
+│  │  ├─ controllers/
+│  │  ├─ middleware/
+│  │  ├─ utils/
+│  │  └─ index.js
+│  └─ scripts/seed.js
+├─ README.md
+
+Environment variables (required)
+
+MONGODB_URI — MongoDB Atlas connection string
+
+JWT_SECRET — Strong secret for JWT signing
+
+STRIPE_SECRET_KEY — Stripe secret key
+
+STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret
+
+CLIENT_BASE_URL — frontend base URL (for CORS & Stripe redirect)
+
+ADMIN_EMAIL and ADMIN_PASSWORD (optional for initial seed)
+
+(Optional) SENDGRID_API_KEY if adding email confirmations
+
+Developer & deployment notes (for Replit)
+
+Use Replit’s environment variables panel to set the env vars above.
+
+Expose server to the web (Replit does this). Use a publicly accessible endpoint for Stripe webhooks — configure Stripe to call your Replit server webhook URL (use https://<replit>.repl.co/api/webhooks/stripe). For local testing, use stripe-cli or ngrok.
+
+Replit supports running both frontend and backend — run server on a port and serve client via dev build or static build. Provide scripts:
+
+server: node src/index.js (or nodemon)
+
+client: npm start (CRA) or vite command
+
+start: orchestrate both via concurrently (or use Replit two-process config)
+
+Testing & QA
+
+Unit test examples for API logic (date overlap check) — Jest for backend (optional).
+
+Manual test checklist:
+
+Check availability for overlapping dates returns unavailable.
+
+Create reservation and successfully pay with Stripe test cards (e.g., 4242 4242 4242 4242) and verify webhook marks reservation paid.
+
+Admin login and mark reservation statuses.
+
+Export reservations CSV from admin.
+
+Edge cases: invalid date ranges, buffer days, timezones.
+
+Assets & image sourcing
+
+Use Pixabay for production-safe photos. Suggested searches: luxury hotel, hotel pool, hotel room, hotel lobby, ocean view hotel, boutique hotel.
+
+Use Pinterest only as moodboard inspiration (dribbble + pinterest for composition). Keep all actual production images from Pixabay or owned assets.
+
+README & docs for the generator to include
+
+Setup instructions (install dependencies in client & server, set env vars).
+
+How to run locally (npm install in both client and server, npm run dev scripts) and how to seed DB (node server/scripts/seed.js).
+
+How to configure Stripe (where to put keys, how to set webhook).
+
+How to build for production and host on Replit.
+
+Extra polish & optional / stretch features (nice to have)
+
+Email confirmations via SendGrid on successful booking.
+
+Admin dashboard charts (bookings per month, revenue).
+
+Calendar UI on admin to view blocked & reserved dates.
+
+Channel manager / iCal export (future).
+
+Refund functionality via Stripe (admin action).
+
+Acceptance criteria (what to deliver)
+
+Working React frontend with all public pages and reservation flow.
+
+Express backend with REST endpoints, Stripe integration, webhook handling, and MongoDB persistence.
+
+Secure admin login + admin views to manage reservations.
+
+Seed script populating sample rooms & admin user.
+
+README with environment settings, setup, and Stripe webhook instructions.
+
+All code in JavaScript (no TypeScript).
+
+Final note to the generator
+
+Please produce a complete project scaffold (client + server), implement the data models, API endpoints, Stripe Checkout flow and webhook handling, basic admin authentication and UI, and include seeding scripts and a README. Follow the Wanderlush Dribbble style for the frontend UI components and interactions. Use Tailwind for styling (allowed) and keep everything in JavaScript. Make sure the webhook endpoint is easy to configure in Stripe and documented.
